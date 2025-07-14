@@ -1,0 +1,29 @@
+{
+  "name": "crypto-database-proxy",
+  "version": "1.0.0",
+  "description": "Serveur proxy pour les connexions de base de données",
+  "main": "database-proxy.js",
+  "scripts": {
+    "start": "node database-proxy.js",
+    "dev": "nodemon database-proxy.js",
+    "install-deps": "npm install"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "pg": "^8.11.3",
+    "mysql2": "^3.6.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "keywords": [
+    "database",
+    "proxy",
+    "postgresql",
+    "mysql",
+    "api"
+  ],
+  "author": "Crypto Database Tool",
+  "license": "MIT"
+}
