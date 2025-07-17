@@ -12,6 +12,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useEnvironmentStore } from '../stores/environmentStore';
 import { Variable, Environment } from '../types/global';
+import { v4 as uuidv4 } from 'uuid';
 
 interface VariableRowProps {
   variable: Variable;
@@ -35,6 +36,10 @@ const VariableRow: React.FC<VariableRowProps> = ({
   const [editedVariable, setEditedVariable] = useState(variable);
   const [showValue, setShowValue] = useState(!variable.secret);
   
+  useEffect(() => {
+    setEditedVariable(variable);
+  }, [variable]);
+
   const handleSave = () => {
     onUpdate(editedVariable);
     onSave();
@@ -55,16 +60,32 @@ const VariableRow: React.FC<VariableRowProps> = ({
             onChange={(e) => setEditedVariable({ ...editedVariable, key: e.target.value })}
             className="input w-full"
             placeholder="Nom de la variable"
+            autoFocus
           />
         </td>
         <td className="px-6 py-4">
-          <input
-            type={editedVariable.secret ? 'password' : 'text'}
-            value={editedVariable.value}
-            onChange={(e) => setEditedVariable({ ...editedVariable, value: e.target.value })}
-            className="input w-full"
-            placeholder="Valeur"
-          />
+          <div className="flex items-center space-x-2">
+            <input
+              type={editedVariable.secret ? 'password' : 'text'}
+              value={editedVariable.value}
+              onChange={(e) => setEditedVariable({ ...editedVariable, value: e.target.value })}
+              className="input w-full"
+              placeholder="Valeur"
+            />
+            {editedVariable.secret && (
+              <button
+                type="button"
+                onClick={() => setShowValue(!showValue)}
+                className="p-1 text-gray-400 hover:text-gray-600"
+              >
+                {showValue ? (
+                  <EyeSlashIcon className="h-4 w-4" />
+                ) : (
+                  <EyeIcon className="h-4 w-4" />
+                )}
+              </button>
+            )}
+          </div>
         </td>
         <td className="px-6 py-4">
           <input
@@ -92,6 +113,7 @@ const VariableRow: React.FC<VariableRowProps> = ({
               onClick={handleSave}
               className="p-1 text-green-600 hover:text-green-700 rounded"
               title="Sauvegarder"
+              disabled={!editedVariable.key || !editedVariable.value}
             >
               <CheckIcon className="h-4 w-4" />
             </button>
@@ -290,31 +312,33 @@ export const Environments: React.FC = () => {
     updateVariable,
     deleteVariable,
     getEnvironment,
-    exportEnvironment,
-    importEnvironment
   } = useEnvironmentStore();
   
   const [selectedEnvironment, setSelectedEnvironment] = useState<string | null>(null);
   const [editingVariableId, setEditingVariableId] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newEnvironmentName, setNewEnvironmentName] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [isAddingVariable, setIsAddingVariable] = useState(false);
+  const [newVariable, setNewVariable] = useState<Omit<Variable, 'id'>>({
+    key: '',
+    value: '',
+    description: '',
+    secret: false
+  });
+  const [showNewVariableValue, setShowNewVariableValue] = useState(false);
   const [editingEnvironment, setEditingEnvironment] = useState<Environment | null>(null);
   const [showEditForm, setShowEditForm] = useState(false);
-  
-  // Vérifier si on doit créer un nouvel environnement (depuis le Dashboard)
+
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('create') === 'true') {
       setShowCreateForm(true);
-      // Nettoyer l'URL
       window.history.replaceState({}, '', '/environments');
     }
   }, []);
-  
-  // Obtenir l'environnement sélectionné
+
   const selectedEnv = selectedEnvironment ? getEnvironment(selectedEnvironment) : null;
-  
+
   const handleCreateEnvironment = () => {
     if (newEnvironmentName.trim()) {
       createEnvironment(newEnvironmentName.trim());
@@ -322,37 +346,42 @@ export const Environments: React.FC = () => {
       setShowCreateForm(false);
     }
   };
-  
+
   const handleAddVariable = () => {
+    if (!newVariable.key || !newVariable.value) return;
+    
     if (selectedEnvironment) {
-      const newVariable = {
+      addVariable(selectedEnvironment, newVariable);
+      setIsAddingVariable(false);
+      setNewVariable({
         key: '',
         value: '',
         description: '',
         secret: false
-      };
-      
-      addVariable(selectedEnvironment, newVariable);
+      });
+      setShowNewVariableValue(false);
     }
   };
-  
+
   const handleUpdateVariable = (updatedVariable: Variable) => {
     if (selectedEnvironment && updatedVariable.id) {
       updateVariable(selectedEnvironment, updatedVariable.id, updatedVariable);
     }
   };
-  
+
   const handleDeleteVariable = (variableId: string) => {
     if (selectedEnvironment) {
       deleteVariable(selectedEnvironment, variableId);
     }
   };
-  
+
   const handleSelectEnvironment = (envId: string) => {
     setActiveEnvironment(envId);
     setSelectedEnvironment(envId);
+    setEditingVariableId(null);
+    setIsAddingVariable(false);
   };
-  
+
   const handleEditEnvironment = (envId: string) => {
     const environment = getEnvironment(envId);
     if (environment) {
@@ -376,7 +405,7 @@ export const Environments: React.FC = () => {
     setShowEditForm(false);
     setEditingEnvironment(null);
   };
-  
+
   const handleDeleteEnvironment = (envId: string) => {
     if (confirm('Êtes-vous sûr de vouloir supprimer cet environnement ?')) {
       deleteEnvironment(envId);
@@ -385,15 +414,14 @@ export const Environments: React.FC = () => {
       }
     }
   };
-  
+
   const handleDuplicateEnvironment = (envId: string) => {
     duplicateEnvironment(envId);
   };
-  
+
   return (
     <div className="h-full bg-gray-50">
       <div className="max-w-7xl mx-auto p-6">
-        {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
             <div>
@@ -404,7 +432,7 @@ export const Environments: React.FC = () => {
             </div>
             <button
               onClick={() => setShowCreateForm(true)}
-              className="btn btn-primary"
+              className="btn btn-primary border p-3 hover:bg-blue-800"
             >
               <PlusIcon className="h-5 w-5 mr-2" />
               Nouvel environnement
@@ -412,7 +440,6 @@ export const Environments: React.FC = () => {
           </div>
         </div>
         
-        {/* Create form */}
         {showCreateForm && (
           <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
             <h3 className="text-lg font-medium text-gray-900 mb-4">
@@ -426,10 +453,11 @@ export const Environments: React.FC = () => {
                 placeholder="Nom de l'environnement"
                 className="input flex-1"
                 onKeyPress={(e) => e.key === 'Enter' && handleCreateEnvironment()}
+                autoFocus
               />
               <button
                 onClick={handleCreateEnvironment}
-                className="btn btn-primary"
+                className="btn btn-primary px-3 py-2"
                 disabled={!newEnvironmentName.trim()}
               >
                 Créer
@@ -439,7 +467,7 @@ export const Environments: React.FC = () => {
                   setShowCreateForm(false);
                   setNewEnvironmentName('');
                 }}
-                className="btn btn-ghost"
+                className="btn btn-ghost px-3 py-2"
               >
                 Annuler
               </button>
@@ -447,7 +475,6 @@ export const Environments: React.FC = () => {
           </div>
         )}
         
-        {/* Environments grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {environments.map((environment) => (
             <EnvironmentCard
@@ -462,7 +489,6 @@ export const Environments: React.FC = () => {
           ))}
         </div>
         
-        {/* Variables table */}
         {selectedEnv && (
           <div className="bg-white rounded-lg border border-gray-200">
             <div className="px-6 py-4 border-b border-gray-200">
@@ -471,8 +497,9 @@ export const Environments: React.FC = () => {
                   Variables - {selectedEnv.name}
                 </h3>
                 <button
-                  onClick={handleAddVariable}
-                  className="btn btn-primary btn-sm"
+                  onClick={() => setIsAddingVariable(true)}
+                  className="btn btn-primary btn-sm "
+                  disabled={isAddingVariable}
                 >
                   <PlusIcon className="h-4 w-4 mr-2" />
                   Ajouter une variable
@@ -480,61 +507,133 @@ export const Environments: React.FC = () => {
               </div>
             </div>
             
-            {selectedEnv.variables.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-500">Aucune variable définie</p>
-                <button
-                  onClick={handleAddVariable}
-                  className="btn btn-ghost btn-sm mt-2"
-                >
-                  Ajouter la première variable
-                </button>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Nom
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Valeur
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Description
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Type
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Nom
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Valeur
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Description
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Type
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {isAddingVariable && (
+                    <tr className="bg-blue-50">
+                      <td className="px-6 py-4">
+                        <input
+                          type="text"
+                          value={newVariable.key}
+                          onChange={(e) => setNewVariable({...newVariable, key: e.target.value})}
+                          className="input w-full"
+                          placeholder="Nom*"
+                          autoFocus
+                        />
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type={newVariable.secret && !showNewVariableValue ? 'password' : 'text'}
+                            value={newVariable.value}
+                            onChange={(e) => setNewVariable({...newVariable, value: e.target.value})}
+                            className="input w-full"
+                            placeholder="Valeur*"
+                          />
+                          {newVariable.secret && (
+                            <button
+                              type="button"
+                              onClick={() => setShowNewVariableValue(!showNewVariableValue)}
+                              className="p-1 text-gray-400 hover:text-gray-600"
+                            >
+                              {showNewVariableValue ? (
+                                <EyeSlashIcon className="h-4 w-4" />
+                              ) : (
+                                <EyeIcon className="h-4 w-4" />
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <input
+                          type="text"
+                          value={newVariable.description || ''}
+                          onChange={(e) => setNewVariable({...newVariable, description: e.target.value})}
+                          className="input w-full"
+                          placeholder="Description"
+                        />
+                      </td>
+                      <td className="px-6 py-4">
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={newVariable.secret}
+                            onChange={(e) => setNewVariable({...newVariable, secret: e.target.checked})}
+                            className="rounded mr-2"
+                          />
+                          <span className="text-sm text-gray-600">Secret</span>
+                        </label>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={handleAddVariable}
+                            className="p-1 text-green-600 hover:text-green-700 rounded"
+                            disabled={!newVariable.key || !newVariable.value}
+                            title="Enregistrer"
+                          >
+                            <CheckIcon className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsAddingVariable(false);
+                              setNewVariable({
+                                key: '',
+                                value: '',
+                                description: '',
+                                secret: false
+                              });
+                            }}
+                            className="p-1 text-gray-600 hover:text-gray-700 rounded"
+                            title="Annuler"
+                          >
+                            <XMarkIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {selectedEnv.variables.map((variable) => (
-                      <VariableRow
-                        key={variable.id}
-                        variable={variable}
-                        onUpdate={handleUpdateVariable}
-                        onDelete={handleDeleteVariable}
-                        isEditing={editingVariableId === variable.id}
-                        onEdit={() => setEditingVariableId(variable.id)}
-                        onSave={() => setEditingVariableId(null)}
-                        onCancel={() => setEditingVariableId(null)}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                  )}
+
+                  {selectedEnv.variables.map((variable) => (
+                    <VariableRow
+                      key={variable.id}
+                      variable={variable}
+                      onUpdate={handleUpdateVariable}
+                      onDelete={handleDeleteVariable}
+                      isEditing={editingVariableId === variable.id}
+                      onEdit={() => setEditingVariableId(variable.id)}
+                      onSave={() => setEditingVariableId(null)}
+                      onCancel={() => setEditingVariableId(null)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Edit Environment Modal */}
       {showEditForm && editingEnvironment && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
@@ -555,6 +654,7 @@ export const Environments: React.FC = () => {
                   })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Nom de l'environnement"
+                  autoFocus
                 />
               </div>
               <div>
